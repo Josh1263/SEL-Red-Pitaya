@@ -1,0 +1,130 @@
+# Red Pitaya SEL LLRF Development & Toolchain Guide
+
+
+This repository contains the Simulink model, HDL generation scripts, Vivado block diagrams, for the Low-Cost Self-Excited Loop (SEL) Low-Level RF (LLRF) control system on the Red Pitaya STEMlab 125-14 Pro.
+IMPORTANT: if you want the latest jupyter files, please download them from the board and upload here
+
+---
+
+
+## 1. General HDL Coder Compliance (Simulink Modeling)
+
+
+To ensure Simulink models generate clean, synthesizable VHDL/Verilog via MATLAB HDL Coder, adhere strictly to the following compliance rules:
+
+
+### A. Solvers & Timing
+* Solver Setup: Set the global Simulink model solver to "Auto (automatic solver selection)" or a continuous solver for the overall canvas if simulating continuous-time cavity physics in the testbench. 
+* Discrete Subsystem (DUT): The HDL Design Under Test (DUT) subsystem itself MUST be strictly discrete. Set all blocks, ports, and sampling inside the DUT to discrete execution corresponding to the system clock (f_clk = 125 MHz, sample time Ts = 8 ns).
+* Rate Transition: Insert "Rate Transition" or "Zero-Order Hold" blocks on the boundary where continuous signals from the outer testbench enter the discrete DUT subsystem.
+
+
+### B. Datatypes & Fixed-Point Math
+* Supported Types: Use fixed-point (fixdt) or integer datatypes (uint8, int16, int32, etc.) inside the DUT. Double/single floating-point blocks are not synthesizable unless using explicit target-specific floating-point IP blocks.
+* Word Length Boundaries:
+  - ADC inputs are 14-bit signed/unsigned (padded to 16-bit).
+  - Mixer and filter math uses 18-bit and 25-bit word lengths to match native Xilinx Zynq DSP48E1 slice multipliers (25 x 18).
+* Overflow & Rounding: Set arithmetic blocks (Add, Subtract, Multiply) to "Saturate on overflow" (or Wrap where mathematically bounded) and use "Nearest" rounding to prevent DC bias.
+
+
+### C. Synthesizable Block Selection
+* run hdllib (just that word) in Matlab, this will restrict your block selection to whats allowed
+* Avoid dynamic matrix operations, variable-length vectors, string parsing, or non-discrete delays.
+* Feedback Loops: Algebraic loops inside the DUT are prohibited. Every feedback path inside the DUT must contain at least one discrete delay register ("Unit Delay" or "Delay" block) to establish deterministic pipeline timing.
+
+
+---
+
+
+## 2. HDL Workflow Advisor Setup & Configuration
+
+
+To generate the IP core from Simulink, right-click the discrete DUT subsystem -> HDL Code -> HDL Workflow Advisor.
+
+
+### Step 1: Set Target Interface
+* 1.1 Set Target Device and Synthesis Tool:
+  - Target Workflow: IP Core Generation
+  - Target Platform: Generic Xilinx Zynq Board (or custom board definition if installed)
+  - Synthesis Tool: Xilinx Vivado
+  - Family: Zynq | Device: xc7z010 | Package: clg400 | Speed: -1
+* 1.2 Set Target Interface:
+  - Assign core ports to external interface signals:
+    * ADC_I / ADC_Q -> Target platform interface (External Ports or AXI4-Stream)
+    * DAC_I / DAC_Q -> Target platform interface (External Ports)
+    * Phase_Offset / Gain / Control_Regs -> AXI4-Lite (Auto-assign base addresses)
+    * clk / reset -> IP Core Clock / Reset
+
+
+### Step 2: Prepare Model for HDL Code Generation
+* 2.1 - 2.4 Check Model & Critical Paths: Run tests to identify unsupported blocks, multirate conflicts, or un-pipelined combinatorial chains inside the discrete DUT.
+
+
+### Step 3: HDL Option Configurations & Optimizations
+* Set target language to VHDL or Verilog.
+* Global Pipelining Settings:
+  - Adaptive Pipelining: Enabled to automatically insert pipeline registers around complex math/multiplier blocks.
+  - Delay Balancing: Enabled so parallel signal paths automatically match pipeline latency across multi-cycle branches.
+  - Distributed Pipelining: Enabled to allow pipeline position change to shorten critical paths
+
+
+### Step 4: Generate IP Core
+* Execute 4.1 - 4.3 (Generate Core & Check RTL). The output IP core will be placed in the hdl_prj/ipcore/ directory.
+
+
+---
+
+
+## 3. Vivado Hardware Integration Workflow
+
+
+### A. Rebuilding / Opening the Project
+1. Open Xilinx Vivado 
+2. Create or open the block diagram project (.xpr).
+
+
+### B. Setting Up IP Repositories
+1. Go to Tools -> Settings -> IP -> Repository.
+2. Click + and add:
+   - The generated Simulink IP directory (hdl_prj/ipcore/).
+   - The Red Pitaya peripheral IP library (FPGA-Notes-For-Scientists/ip or local board support IP repository).
+3. Click IP Status -> Upgrade All if Vivado flags version mismatches.
+
+
+### C. Managing Constraints (.xdc) & Sources (.v / .vhd)
+* Constraints (ports.xdc): Map FPGA package pins (clg400) to ADC/DAC physical lines, system clocks, and LED debug pins. Ensure I/O standards (LVCMOS33, DIFF_HSTL, etc.) match board schematic specifications.
+* Editing Top Wrappers / Custom Logic: If modifying custom HDL source files, edit them under the Sources pane. Do not edit autogenerated HDL files inside the IP directory directly; update the Simulink model and regenerate instead.
+
+
+### D. Synthesis & Implementation
+1. Click Run Synthesis. Ensure zero critical warnings regarding unconstrained clocks or missing ports.
+2. Click Run Implementation.
+3. Generate Bitstream (.bit) and export hardware wrapper (.xsa) if rebuilding embedded C/Python drivers.
+
+
+---
+
+
+## 4. Timing Closure & Resolving Timing Errors
+
+
+Achieving timing closure at 125 MHz (8 ns period constraint) on the Zynq-7010 fabric requires careful slack monitoring.
+
+
+### A. Analyzing the Timing Report
+After Implementation completes, open the Timing Summary Report under Implementation -> Open Implemented Design:
+* Worst Setup Slack (WSS): Must be > 0 ns (indicates maximum path delay fits within 8 ns).
+* Worst Hold Slack (WHS): Must be > 0 ns (indicates signals don't transition too fast relative to clock edges).
+
+
+### B. Locating Critical Paths
+1. Double-click the failing path in the Timing Results window.
+2. Examine the path hierarchy: note source register, intermediate logic levels (LUTs/DSP blocks), and destination register.
+3. If Logic Levels > 4-5 on a single 8 ns clock cycle, the combinatorial path is too long.
+
+
+### C. Fixing Timing Violations in Simulink
+1. Trace the instance names back to the corresponding block inside the discrete Simulink DUT.
+2. Add Pipelines: Insert additional Delay or Unit Delay blocks along long combinatorial paths (e.g., between multiplier outputs and adder inputs).
+3. Enable Hierarchy Pipelining: In Simulink HDL Coder settings, enable Distributed Pipelining to let the compiler rebalance registers across logic boundaries.
+4. Regenerate IP core, re-run Vivado implementation, and verify positive WSS/WHS margins.
