@@ -1,9 +1,10 @@
 #############################
 # PARAMETERS
 #############################
-set ip 192.168.2.99
-set user xilinx
-#############################
+set ip <user-RP-IP>
+set user xilinx #default for PYNQ
+############################
+
 cd [get_property DIRECTORY [current_project]]
 set projName [get_property NAME [current_project]]
 

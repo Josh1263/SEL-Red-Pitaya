@@ -80,5 +80,5 @@ To ensure synthesized VHDL matches real-time constraints ($T_s = 8\text{ ns}$):
 
 ---
 
-## 📜 License
+## License
 This repository is published for portfolio and educational demonstration purposes.
