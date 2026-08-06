@@ -1,0 +1,18 @@
+# MATLAB & Simulink
+slprj/
+*.slxc
+*.asv
+*_ert_rtw/
+
+# Vivado / Xilinx build outputs & logs
+*.log
+*.jou
+.Xil/
+*.runs/
+*.sim/
+*.hw/
+*.ip_user_files/
+
+# OS / System Files
+.DS_Store
+Thumbs.db
