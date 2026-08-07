@@ -55,8 +55,7 @@ Run `program_fpga.tcl` or upload the compiled `.bit` bitstream file directly to 
 <summary><b>1. Simulink Modeling & HDL Coder Compliance Rules</b></summary>
 
 To ensure synthesized VHDL matches real-time constraints ($T_s = 8\text{ ns}$):
-* **Solver & Timing:** Global solver set to discrete execution inside the DUT subsystem ($f_{clk} = 125\text{ MHz}$). Continuous-to-discrete boundaries use `Rate Transition` blocks.
-* **Fixed-Point Datatypes:** ADC inputs map to 14-bit signed/unsigned formats; DSP math uses 18-bit and 25-bit word lengths to match native Xilinx Zynq DSP48E1 slice multipliers ($25 \times 18$).
+* **Fixed-Point Datatypes:** ADC inputs map to 16-bit signed format, with sfix16_en15 mapping full scale voltages to (-1, .999...); DSP math should retain information up to 18-bit and 25-bit word lengths to match native Xilinx Zynq DSP48E1 slice multipliers ($25 \times 18$).
 * **Feedback Loops:** Every feedback path contains explicit delay registers (`Unit Delay`) to eliminate algebraic loops and ensure deterministic timing.
 * **Synthesis Constraints:** Restricted to blocks available via MATLAB `hdllib`.
 </details>
@@ -66,7 +65,7 @@ To ensure synthesized VHDL matches real-time constraints ($T_s = 8\text{ ns}$):
 
 * **Target Device:** Generic Xilinx Zynq Board (`xc7z010-clg400-1`).
 * **Interface Mapping:** * High-speed `ADC_I/Q` and `DAC_I/Q` mapped to external platform ports.
-  * Control registers (`Phase_Offset`, `Gain`) mapped to the `AXI4-Lite` bus.
+  * Control registers (`Phase_Offset`, `Gain`) mapped to the `AXI4-Lite` bus, as well as pulse configurations.
 * **Optimizations Enabled:** Adaptive pipelining, delay balancing, and distributed pipelining for critical path reduction.
 </details>
 
@@ -77,8 +76,3 @@ To ensure synthesized VHDL matches real-time constraints ($T_s = 8\text{ ns}$):
 * Worst Setup Slack (WSS) and Worst Hold Slack (WHS) monitored via Vivado Timing Summary reports.
 * Timing violations resolved by adding pipeline registers between heavy combinatorial paths and leveraging distributed pipelining in HDL Coder.
 </details>
-
----
-
-## License
-This repository is published for portfolio and educational demonstration purposes.
